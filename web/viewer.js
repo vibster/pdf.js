@@ -233,10 +233,10 @@ var PDFFindController = {
       'findcasesensitivitychange'
     ];
 
-    this.handelEvent = this.handelEvent.bind(this);
+    this.handleEvent = this.handleEvent.bind(this);
 
     for (var i = 0; i < events.length; i++) {
-      window.addEventListener(events[i], this.handelEvent);
+      window.addEventListener(events[i], this.handleEvent);
     }
   },
 
@@ -284,7 +284,7 @@ var PDFFindController = {
     extractPageText(0);
   },
 
-  handelEvent: function(e) {
+  handleEvent: function(e) {
     this.state = e.detail;
     if (e.detail.findPrevious === undefined) {
       this.dirtyMatch = true;
@@ -2069,6 +2069,7 @@ var CustomStyle = (function CustomStyleClosure() {
 })();
 
 var TextLayerBuilder = function textLayerBuilder(textLayerDiv, pageIdx) {
+  var textLayerFrag = document.createDocumentFragment();
   this.textLayerDiv = textLayerDiv;
   this.pageIdx = pageIdx;
   this.matches = [];
@@ -2081,34 +2082,23 @@ var TextLayerBuilder = function textLayerBuilder(textLayerDiv, pageIdx) {
 
   this.endLayout = function textLayerBuilderEndLayout() { },
 
-  this.alignDivs = function() {
-    var self = this;
+  this.renderLayer = function() {
     var textDivs = this.textDivs;
     var textLayerDiv = this.textLayerDiv;
-    var renderTimer = null;
-    var renderInterval = 0;
-    var resumeInterval = 500; // in ms
 
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d');
 
-    var renderDivIdx = 0;
+    // No point in rendering so many divs (per page) as it'd make the browser
+    // unusable even after the divs are rendered
+    if (textDivs.length > 100000)
+      return;
 
-    // Render the text layer, one div at a time
-    function renderTextLayer() {
-      if (textDivs.length === renderDivIdx) {
-        clearInterval(renderTimer);
-        self.renderingDone = true;
-        self.textLayerDiv = textLayerDiv = canvas = ctx = null;
-
-        self.updateMatches();
-        return;
-      }
-      var textDiv = textDivs[renderDivIdx];
-      renderDivIdx ++;
-
+    var i = 0;
+    while (i < textDivs.length) {
+      var textDiv = textDivs[i];
       if (textDiv.dataset.textLength > 0) {
-        textLayerDiv.appendChild(textDiv);
+        textLayerFrag.appendChild(textDiv);
 
         if (textDiv.dataset.textLength > 1) { // avoid div by zero
           // Adjust div width to match canvas text
@@ -2123,29 +2113,12 @@ var TextLayerBuilder = function textLayerBuilder(textLayerDiv, pageIdx) {
           CustomStyle.setProp('transformOrigin' , textDiv, '0% 0%');
         }
       } // textLength > 0
-    }
-    renderTimer = setInterval(renderTextLayer, renderInterval);
+      i++;
+    } // while
 
-    // Stop rendering when user scrolls. Resume after XXX milliseconds
-    // of no scroll events
-    var scrollTimer = null;
-    function textLayerOnScroll() {
-      if (this.renderingDone) {
-        window.removeEventListener('scroll', textLayerOnScroll, false);
-        return;
-      }
-
-      // Immediately pause rendering
-      clearInterval(renderTimer);
-
-      clearTimeout(scrollTimer);
-      scrollTimer = setTimeout(function textLayerScrollTimer() {
-        // Resume rendering
-        renderTimer = setInterval(renderTextLayer, renderInterval);
-      }, resumeInterval);
-    } // textLayerOnScroll
-
-    window.addEventListener('scroll', textLayerOnScroll, false);
+    textLayerDiv.appendChild(textLayerFrag);
+    this.renderingDone = true;
+    this.updateMatches();
   }; // endLayout
 
   this.appendText = function textLayerBuilderAppendText(text,
@@ -2180,7 +2153,7 @@ var TextLayerBuilder = function textLayerBuilder(textLayerDiv, pageIdx) {
       textDiv.dir = bidiText.direction;
     }
 
-    this.alignDivs();
+    this.renderLayer();
   };
 
   this.convertMatches = function textLayerHighlight(matches) {
